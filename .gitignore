@@ -1,0 +1,6 @@
+# compiled binaries
+*.exe
+
+# runtime database
+*.db
+
