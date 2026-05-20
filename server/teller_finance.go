@@ -7,18 +7,19 @@ import (
 )
 
 func (b *Bank) ApplyBonus(request bank.BonusRequest, response *bank.Response) error {
+	if b.notLeader(&response.Success, &response.Message, &response.LeaderAddr) {
+		return nil
+	}
 	if !b.isTeller(request.TellerID) {
 		response.Success = false
 		response.Message = "unauthorized: not a registered teller"
 		return nil
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.logOp(fmt.Sprintf("ApplyBonus teller=%s account=%s pct=%.2f", request.TellerID, request.AccountID, request.Percentage))
-
+	b.mu.RLock()
 	acc, err := b.queryAccount(request.AccountID)
+	b.mu.RUnlock()
+
 	if err == sql.ErrNoRows {
 		response.Success = false
 		response.Message = "account not found"
@@ -30,17 +31,22 @@ func (b *Bank) ApplyBonus(request bank.BonusRequest, response *bank.Response) er
 		return nil
 	}
 
-	delta := round2(acc.Balance * request.Percentage / 100.0)
-	newBalance := round2(acc.Balance + delta)
-	if newBalance < 0 {
-		newBalance = 0
+	cmd := fmt.Sprintf("ApplyBonus teller=%s account=%s pct=%.2f",
+		request.TellerID, request.AccountID, request.Percentage)
+	if _, err := b.replicateAndCommit(cmd); err != nil {
+		response.Success = false
+		response.Message = err.Error()
+		return nil
 	}
-
-	b.db.Exec("UPDATE accounts SET balance = ? WHERE id = ?", newBalance, request.AccountID)
 
 	label := "bonus"
 	if request.Percentage < 0 {
 		label = "interest"
+	}
+	delta := round2(acc.Balance * request.Percentage / 100.0)
+	newBalance := round2(acc.Balance + delta)
+	if newBalance < 0 {
+		newBalance = 0
 	}
 	response.Success = true
 	response.Message = fmt.Sprintf("applied %.2f%% %s ($%.2f) — new balance: $%.2f",
@@ -49,6 +55,9 @@ func (b *Bank) ApplyBonus(request bank.BonusRequest, response *bank.Response) er
 }
 
 func (b *Bank) ChargeServiceFee(request bank.FeeRequest, response *bank.Response) error {
+	if b.notLeader(&response.Success, &response.Message, &response.LeaderAddr) {
+		return nil
+	}
 	if !b.isTeller(request.TellerID) {
 		response.Success = false
 		response.Message = "unauthorized: not a registered teller"
@@ -60,12 +69,10 @@ func (b *Bank) ChargeServiceFee(request bank.FeeRequest, response *bank.Response
 		return nil
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.logOp(fmt.Sprintf("ChargeServiceFee teller=%s account=%s fee=%.2f", request.TellerID, request.AccountID, request.Fee))
-
+	b.mu.RLock()
 	acc, err := b.queryAccount(request.AccountID)
+	b.mu.RUnlock()
+
 	if err == sql.ErrNoRows {
 		response.Success = false
 		response.Message = "account not found"
@@ -77,14 +84,20 @@ func (b *Bank) ChargeServiceFee(request bank.FeeRequest, response *bank.Response
 		return nil
 	}
 
+	cmd := fmt.Sprintf("ChargeServiceFee teller=%s account=%s fee=%.2f",
+		request.TellerID, request.AccountID, request.Fee)
+	if _, err := b.replicateAndCommit(cmd); err != nil {
+		response.Success = false
+		response.Message = err.Error()
+		return nil
+	}
+
 	newBalance := round2(acc.Balance - request.Fee)
 	if newBalance < 0 {
 		newBalance = 0
 	}
-
-	b.db.Exec("UPDATE accounts SET balance = ? WHERE id = ?", newBalance, request.AccountID)
-
 	response.Success = true
-	response.Message = fmt.Sprintf("charged service fee $%.2f — new balance: $%.2f", request.Fee, newBalance)
+	response.Message = fmt.Sprintf("charged service fee $%.2f — new balance: $%.2f",
+		request.Fee, newBalance)
 	return nil
 }

@@ -7,6 +7,9 @@ import (
 )
 
 func (b *Bank) OpenAccount(request bank.OpenAccountRequest, response *bank.OpenAccountResponse) error {
+	if b.notLeader(&response.Success, &response.Message, &response.LeaderAddr) {
+		return nil
+	}
 	if !b.isTeller(request.TellerID) {
 		response.Success = false
 		response.Message = "unauthorized: not a registered teller"
@@ -23,41 +26,37 @@ func (b *Bank) OpenAccount(request bank.OpenAccountRequest, response *bank.OpenA
 		return nil
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	id := b.generateID()
-	b.logOp(fmt.Sprintf("OpenAccount teller=%s username=%s id=%s balance=%.2f", request.TellerID, request.Username, id, request.InitialBalance))
+	cmd := fmt.Sprintf("OpenAccount teller=%s username=%s id=%s balance=%.2f",
+		request.TellerID, request.Username, id, request.InitialBalance)
 
-	_, err := b.db.Exec(
-		"INSERT INTO accounts (id, username, balance, status) VALUES (?, ?, ?, ?)",
-		id, request.Username, request.InitialBalance, bank.Active,
-	)
-	if err != nil {
+	if _, err := b.replicateAndCommit(cmd); err != nil {
 		response.Success = false
-		response.Message = "database error"
+		response.Message = err.Error()
 		return nil
 	}
 
 	response.Success = true
 	response.AccountID = id
-	response.Message = fmt.Sprintf("opened account for %s with balance $%.2f", request.Username, request.InitialBalance)
+	response.Message = fmt.Sprintf("opened account for %s with balance $%.2f",
+		request.Username, request.InitialBalance)
 	return nil
 }
 
 func (b *Bank) CloseAccount(request bank.TellerRequest, response *bank.Response) error {
+	if b.notLeader(&response.Success, &response.Message, &response.LeaderAddr) {
+		return nil
+	}
 	if !b.isTeller(request.TellerID) {
 		response.Success = false
 		response.Message = "unauthorized: not a registered teller"
 		return nil
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.logOp(fmt.Sprintf("CloseAccount teller=%s account=%s", request.TellerID, request.AccountID))
-
+	b.mu.RLock()
 	acc, err := b.queryAccount(request.AccountID)
+	b.mu.RUnlock()
+
 	if err == sql.ErrNoRows {
 		response.Success = false
 		response.Message = "account not found"
@@ -69,26 +68,33 @@ func (b *Bank) CloseAccount(request bank.TellerRequest, response *bank.Response)
 		return nil
 	}
 
-	b.db.Exec("UPDATE accounts SET status = ? WHERE id = ?", bank.Closed, request.AccountID)
+	cmd := fmt.Sprintf("CloseAccount teller=%s account=%s", request.TellerID, request.AccountID)
+	msg, err := b.replicateAndCommit(cmd)
+	if err != nil {
+		response.Success = false
+		response.Message = err.Error()
+		return nil
+	}
 
 	response.Success = true
-	response.Message = fmt.Sprintf("account %s closed", request.AccountID)
+	response.Message = msg
 	return nil
 }
 
 func (b *Bank) FreezeAccount(request bank.TellerRequest, response *bank.Response) error {
+	if b.notLeader(&response.Success, &response.Message, &response.LeaderAddr) {
+		return nil
+	}
 	if !b.isTeller(request.TellerID) {
 		response.Success = false
 		response.Message = "unauthorized: not a registered teller"
 		return nil
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.logOp(fmt.Sprintf("FreezeAccount teller=%s account=%s", request.TellerID, request.AccountID))
-
+	b.mu.RLock()
 	acc, err := b.queryAccount(request.AccountID)
+	b.mu.RUnlock()
+
 	if err == sql.ErrNoRows {
 		response.Success = false
 		response.Message = "account not found"
@@ -105,26 +111,33 @@ func (b *Bank) FreezeAccount(request bank.TellerRequest, response *bank.Response
 		return nil
 	}
 
-	b.db.Exec("UPDATE accounts SET status = ? WHERE id = ?", bank.Frozen, request.AccountID)
+	cmd := fmt.Sprintf("FreezeAccount teller=%s account=%s", request.TellerID, request.AccountID)
+	msg, err := b.replicateAndCommit(cmd)
+	if err != nil {
+		response.Success = false
+		response.Message = err.Error()
+		return nil
+	}
 
 	response.Success = true
-	response.Message = fmt.Sprintf("account %s frozen", request.AccountID)
+	response.Message = msg
 	return nil
 }
 
 func (b *Bank) UnfreezeAccount(request bank.TellerRequest, response *bank.Response) error {
+	if b.notLeader(&response.Success, &response.Message, &response.LeaderAddr) {
+		return nil
+	}
 	if !b.isTeller(request.TellerID) {
 		response.Success = false
 		response.Message = "unauthorized: not a registered teller"
 		return nil
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.logOp(fmt.Sprintf("UnfreezeAccount teller=%s account=%s", request.TellerID, request.AccountID))
-
+	b.mu.RLock()
 	acc, err := b.queryAccount(request.AccountID)
+	b.mu.RUnlock()
+
 	if err == sql.ErrNoRows {
 		response.Success = false
 		response.Message = "account not found"
@@ -141,9 +154,15 @@ func (b *Bank) UnfreezeAccount(request bank.TellerRequest, response *bank.Respon
 		return nil
 	}
 
-	b.db.Exec("UPDATE accounts SET status = ? WHERE id = ?", bank.Active, request.AccountID)
+	cmd := fmt.Sprintf("UnfreezeAccount teller=%s account=%s", request.TellerID, request.AccountID)
+	msg, err := b.replicateAndCommit(cmd)
+	if err != nil {
+		response.Success = false
+		response.Message = err.Error()
+		return nil
+	}
 
 	response.Success = true
-	response.Message = fmt.Sprintf("account %s unfrozen", request.AccountID)
+	response.Message = msg
 	return nil
 }

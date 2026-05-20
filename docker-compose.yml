@@ -1,0 +1,90 @@
+services:
+  server1:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command:
+      - "-id=S1"
+      - "-port=8080"
+      - "-addr=server1:8080"
+      - "-leader"
+      - "-peers=S2=server2:8080,S3=server3:8080,S4=server4:8080,S5=server5:8080"
+    volumes:
+      - ./logs/${SCENARIO:-scenario1}:/logs
+    working_dir: /logs
+    networks: [banknet]
+
+  server2:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command:
+      - "-id=S2"
+      - "-port=8080"
+      - "-addr=server2:8080"
+      - "-peers=S1=server1:8080,S3=server3:8080,S4=server4:8080,S5=server5:8080"
+    volumes:
+      - ./logs/${SCENARIO:-scenario1}:/logs
+    working_dir: /logs
+    networks: [banknet]
+
+  server3:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command:
+      - "-id=S3"
+      - "-port=8080"
+      - "-addr=server3:8080"
+      - "-peers=S1=server1:8080,S2=server2:8080,S4=server4:8080,S5=server5:8080"
+    volumes:
+      - ./logs/${SCENARIO:-scenario1}:/logs
+    working_dir: /logs
+    networks: [banknet]
+
+  server4:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command:
+      - "-id=S4"
+      - "-port=8080"
+      - "-addr=server4:8080"
+      - "-peers=S1=server1:8080,S2=server2:8080,S3=server3:8080,S5=server5:8080"
+    volumes:
+      - ./logs/${SCENARIO:-scenario1}:/logs
+    working_dir: /logs
+    networks: [banknet]
+
+  server5:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command:
+      - "-id=S5"
+      - "-port=8080"
+      - "-addr=server5:8080"
+      - "-peers=S1=server1:8080,S2=server2:8080,S3=server3:8080,S4=server4:8080"
+    volumes:
+      - ./logs/${SCENARIO:-scenario1}:/logs
+    working_dir: /logs
+    networks: [banknet]
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    networks: [banknet]
+    profiles: [tools]
+
+  tester:
+    build:
+      context: .
+      dockerfile: tester/Dockerfile
+    environment:
+      SERVERS: "server1:8080,server2:8080,server3:8080,server4:8080,server5:8080"
+    networks: [banknet]
+
+networks:
+  banknet:
+    driver: bridge

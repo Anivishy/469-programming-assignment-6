@@ -1,78 +1,124 @@
 package bank
 
-//all acocunt related data fields
 type AccountStatus int
 
-//account status
 const (
 	Active AccountStatus = iota
 	Frozen
 	Closed
 )
 
-//all data for a particular account
 type Account struct {
-	ID string
+	ID       string
 	Username string
-	Balance float64
-	Status AccountStatus
+	Balance  float64
+	Status   AccountStatus
 }
 
-//messages for customer facing account APIs
+// Customer-facing request types
+
 type AccountRequest struct {
 	AccountID string
 }
 
 type AmountRequest struct {
 	AccountID string
-	Amount float64
+	Amount    float64
 }
 
 type TransferRequest struct {
 	FromAccountID string
-	ToAccountID string
-	Amount float64 // dollars, must be > 0
+	ToAccountID   string
+	Amount        float64
 }
 
-//messages for teller facing account APIs
+// Teller-facing request types
+
 type TellerRequest struct {
-	TellerID string
+	TellerID  string
 	AccountID string
 }
 
 type BonusRequest struct {
-	TellerID string
-	AccountID string
+	TellerID   string
+	AccountID  string
 	Percentage float64
 }
 
 type OpenAccountRequest struct {
-	TellerID string
-	Username string
+	TellerID       string
+	Username       string
 	InitialBalance float64
 }
 
 type FeeRequest struct {
-	TellerID string
+	TellerID  string
 	AccountID string
-	Fee float64
+	Fee       float64
 }
 
-//Request response types
+// Response types
+
 type Response struct {
-	Success bool
-	Message string
+	Success    bool
+	Message    string
+	LeaderAddr string
 }
 
 type BalanceResponse struct {
-	Success bool
-	Message string
-	Balance float64
-	Status AccountStatus
+	Success    bool
+	Message    string
+	Balance    float64
+	Status     AccountStatus
+	LeaderAddr string
 }
 
 type OpenAccountResponse struct {
+	Success    bool
+	Message    string
+	AccountID  string
+	LeaderAddr string
+}
+
+// Raft types
+
+type LogEntry struct {
+	Index   int
+	Term    int
+	Command string
+}
+
+type AppendEntriesArgs struct {
+	Term         int
+	LeaderID     string
+	LeaderAddr   string
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []LogEntry
+	LeaderCommit int
+	RequestID    int64
+}
+
+type AppendEntriesReply struct {
+	Term    int
 	Success bool
-	Message string
-	AccountID string
+}
+
+type RequestVoteArgs struct {
+	Term          int
+	CandidateID   string
+	CandidateAddr string
+	LastLogIndex  int
+	LastLogTerm   int
+}
+
+type RequestVoteReply struct {
+	Term        int
+	VoteGranted bool
+}
+
+type GetLogArgs struct{}
+
+type GetLogReply struct {
+	Entries []LogEntry
 }
